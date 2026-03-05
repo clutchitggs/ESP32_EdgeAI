@@ -31,11 +31,11 @@ Conceptual data flow:
 
 ```mermaid
 flowchart LR
-    cameraSensor[Camera Sensor] --> frameBuffer[Frame Buffer]
-    frameBuffer --> preproc[Preprocessing\n(ROI, resize, normalize)]
-    preproc --> tinyCnn[Tiny CNN\n(eye state model)]
-    tinyCnn --> decisionLogic[Drowsiness Decision\n(multi-frame)]
-    decisionLogic --> alertOutput[Alert Output\n(buzzer/LED)]
+    cameraSensor[Camera sensor] --> frameBuffer[Frame buffer]
+    frameBuffer --> preproc["Preprocessing (ROI, resize, normalize)"]
+    preproc --> tinyCnn["Tiny CNN (eye state model)"]
+    tinyCnn --> decisionLogic["Drowsiness decision (multi-frame)"]
+    decisionLogic --> alertOutput["Alert output (buzzer/LED)"]
 ```
 
 The ML model is trained offline (Python/TensorFlow) and then exported in a microcontroller-friendly format (e.g., TensorFlow Lite Micro). The compiled model data is linked into the firmware and evaluated on-device.
