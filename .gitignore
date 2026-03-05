@@ -1,9 +1,0 @@
-# PlatformIO & Build Files
-.pio/
-.vscode/
-*.bin
-*.elf
-
-# OS Junk Files
-.DS_Store
-Thumbs.db
