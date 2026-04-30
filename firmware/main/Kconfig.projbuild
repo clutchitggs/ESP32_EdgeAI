@@ -1,0 +1,39 @@
+menu "XIAO Audio Analyzer"
+
+    config WIFI_SSID
+        string "Wi-Fi SSID"
+        default "myssid"
+        help
+            SSID of the Wi-Fi network the analyzer joins on boot.
+
+    config WIFI_PASSWORD
+        string "Wi-Fi password"
+        default "mypassword"
+        help
+            WPA/WPA2 PSK for the configured SSID. Leave blank for open networks.
+
+    config WIFI_MAX_RETRY
+        int "Wi-Fi connect retry limit"
+        default 8
+        help
+            How many times to retry association before going to soft-AP fallback
+            (fallback is reserved for a future revision; today we just keep
+            retrying).
+
+    config AUDIO_SAMPLE_RATE_HZ
+        int "Audio sample rate (Hz)"
+        default 16000
+        range 8000 48000
+        help
+            PDM microphone sample rate. 16 kHz is a good balance of audio
+            bandwidth (8 kHz Nyquist) and CPU cost.
+
+    config AUDIO_FFT_SIZE
+        int "FFT size (samples, power of 2)"
+        default 1024
+        range 256 2048
+        help
+            Length of the analysis window. 1024 @ 16 kHz gives ~15.6 Hz bin
+            resolution and ~64 ms hop time.
+
+endmenu

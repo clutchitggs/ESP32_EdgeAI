@@ -1,0 +1,6 @@
+## IDF managed components
+##
+## esp-dsp provides FFT, windowing and biquad helpers used by dsp_pipeline.c.
+dependencies:
+  espressif/esp-dsp: "^1.4.0"
+  idf: ">=5.1"

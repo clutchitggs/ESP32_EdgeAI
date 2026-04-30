@@ -1,10 +1,20 @@
 idf_component_register(
     SRCS
         "main.c"
-        "camera.c"
-        "inference.c"
-        "alert.c"
+        "audio_capture.c"
+        "dsp_pipeline.c"
+        "wifi_sta.c"
+        "web_server.c"
     INCLUDE_DIRS
         "."
+    EMBED_TXTFILES
+        "index.html"
+    REQUIRES
+        driver
+        esp_wifi
+        esp_event
+        esp_http_server
+        esp_netif
+        nvs_flash
+        esp_psram
 )
-
