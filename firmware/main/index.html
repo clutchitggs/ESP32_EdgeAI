@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XIAO Audio Spectrum Analyzer</title>
+  <style>
+    :root {
+      --bg:        #07090c;
+      --panel:     #0f141a;
+      --grid:      #1c242f;
+      --text:      #cfd8dc;
+      --dim:       #6b7d8a;
+      --accent:    #00e5ff;
+      --warn:      #ffb74d;
+      --good:      #66ff99;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      font-size: 14px;
+    }
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 18px;
+      flex-wrap: wrap;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--grid);
+    }
+    header h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    header h1 span {
+      color: var(--accent);
+    }
+    .stats {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      color: var(--dim);
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    .stats b { color: var(--text); font-weight: 600; }
+    .stats .ok   { color: var(--good); }
+    .stats .err  { color: var(--warn); }
+    main {
+      display: grid;
+      grid-template-rows: 18vh 26vh 1fr;
+      gap: 10px;
+      padding: 10px;
+      height: calc(100vh - 56px);
+    }
+    .panel {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--grid);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .panel canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .panel .label {
+      position: absolute;
+      top: 6px;
+      left: 10px;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--dim);
+      pointer-events: none;
+    }
+    .panel .reading {
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--accent);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>XIAO <span>Audio</span> Spectrum Analyzer</h1>
+  <div class="stats" id="stats">
+    <span>state: <b id="state" class="err">disconnected</b></span>
+    <span>sr: <b id="sr">-</b> Hz</span>
+    <span>fft: <b id="fft">-</b></span>
+    <span>fps: <b id="fps">0</b></span>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="label">waveform</div>
+    <canvas id="wave"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="label">spectrum (dB FS)</div>
+    <div class="reading" id="peak">peak: -- Hz / -- dB</div>
+    <canvas id="spec"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="label">spectrogram (time × frequency)</div>
+    <canvas id="grams"></canvas>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ----- Canvas helpers --------------------------------------------------------
+function resizeCanvas(cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = cv.clientWidth;
+  const h = cv.clientHeight;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) {
+    cv.width  = w * dpr;
+    cv.height = h * dpr;
+  }
+  return { dpr, w: cv.width, h: cv.height };
+}
+
+// dB-to-RGB colour map (viridis-ish, optimised for cheap canvas use).
+function dbToRgb(db) {
+  // db is in [-128, 0]; map to [0, 1]
+  let t = (db + 100) / 100;       // hottest scale starts at -100 dB
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+  // simple 4-stop gradient: black -> blue -> magenta -> yellow
+  const stops = [
+    [0.00,   8,  10,  20],
+    [0.40,  35,  60, 160],
+    [0.70, 200,  40, 130],
+    [1.00, 255, 230,  80],
+  ];
+  for (let i = 1; i < stops.length; ++i) {
+    if (t <= stops[i][0]) {
+      const a = stops[i - 1], b = stops[i];
+      const f = (t - a[0]) / (b[0] - a[0]);
+      const r = a[1] + (b[1] - a[1]) * f;
+      const g = a[2] + (b[2] - a[2]) * f;
+      const bl = a[3] + (b[3] - a[3]) * f;
+      return [r | 0, g | 0, bl | 0];
+    }
+  }
+  return [255, 230, 80];
+}
+
+// ----- DOM refs --------------------------------------------------------------
+const elState = document.getElementById('state');
+const elSr    = document.getElementById('sr');
+const elFft   = document.getElementById('fft');
+const elFps   = document.getElementById('fps');
+const elPeak  = document.getElementById('peak');
+
+const cvWave  = document.getElementById('wave');
+const cvSpec  = document.getElementById('spec');
+const cvGram  = document.getElementById('grams');
+
+const ctxWave = cvWave.getContext('2d');
+const ctxSpec = cvSpec.getContext('2d');
+const ctxGram = cvGram.getContext('2d');
+
+// Off-screen scrolling spectrogram. We blit the visible window to the
+// on-screen canvas every frame.
+const gramWidth = 600;
+const gramRows  = 256;
+const gramCanvas = document.createElement('canvas');
+gramCanvas.width  = gramWidth;
+gramCanvas.height = gramRows;
+const gramCtx = gramCanvas.getContext('2d');
+let gramCol = 0;
+
+// ----- WebSocket connection --------------------------------------------------
+let ws = null;
+let lastFrame = null;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const host  = location.host || '192.168.1.1';
+  ws = new WebSocket(`${proto}://${host}/ws`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    elState.textContent = 'connected';
+    elState.classList.remove('err');
+    elState.classList.add('ok');
+  };
+  ws.onclose = () => {
+    elState.textContent = 'disconnected — retrying';
+    elState.classList.add('err');
+    elState.classList.remove('ok');
+    setTimeout(connect, 1000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+  ws.onmessage = (ev) => {
+    if (!(ev.data instanceof ArrayBuffer)) return;
+    const f = parseFrame(ev.data);
+    if (!f) return;
+    lastFrame = f;
+    frameCount += 1;
+  };
+}
+
+// Frame layout (must match firmware/main/dsp_pipeline.h):
+//   u32 magic = 'AUDA' little-endian (0x41554441)
+//   u32 seq
+//   f32 peak_hz
+//   f32 peak_db
+//   u16 sample_rate
+//   u16 n_wave
+//   u16 n_spec
+//   u16 reserved
+//   i16[n_wave] wave
+//   i8 [n_spec] spec  (dB clamped to [-128, 0])
+function parseFrame(buf) {
+  const view = new DataView(buf);
+  if (buf.byteLength < 24) return null;
+  const magic = view.getUint32(0, true);
+  if (magic !== 0x41554441) return null;
+  const seq      = view.getUint32(4, true);
+  const peakHz   = view.getFloat32(8, true);
+  const peakDb   = view.getFloat32(12, true);
+  const sr       = view.getUint16(16, true);
+  const nWave    = view.getUint16(18, true);
+  const nSpec    = view.getUint16(20, true);
+  const headerSz = 24;
+  const waveSz   = nWave * 2;
+  const wave = new Int16Array(buf, headerSz, nWave);
+  const spec = new Int8Array (buf, headerSz + waveSz, nSpec);
+  return { seq, peakHz, peakDb, sr, wave, spec };
+}
+
+// ----- Drawing ---------------------------------------------------------------
+function drawWave(f) {
+  const { w, h } = resizeCanvas(cvWave);
+  ctxWave.fillStyle = '#0f141a';
+  ctxWave.fillRect(0, 0, w, h);
+  ctxWave.strokeStyle = '#1c242f';
+  ctxWave.beginPath();
+  ctxWave.moveTo(0, h / 2); ctxWave.lineTo(w, h / 2);
+  ctxWave.stroke();
+
+  ctxWave.strokeStyle = '#00e5ff';
+  ctxWave.lineWidth   = 1.5;
+  ctxWave.beginPath();
+  const n = f.wave.length;
+  for (let i = 0; i < n; ++i) {
+    const x = (i / (n - 1)) * w;
+    const y = h / 2 - (f.wave[i] / 32768) * (h / 2 - 4);
+    if (i === 0) ctxWave.moveTo(x, y); else ctxWave.lineTo(x, y);
+  }
+  ctxWave.stroke();
+}
+
+function drawSpec(f) {
+  const { w, h } = resizeCanvas(cvSpec);
+  ctxSpec.fillStyle = '#0f141a';
+  ctxSpec.fillRect(0, 0, w, h);
+
+  const n = f.spec.length;
+  const barW = w / n;
+  for (let i = 0; i < n; ++i) {
+    const db = f.spec[i];     // dB in [-128, 0]
+    // map [-100, 0] to [0, h]
+    let t = (db + 100) / 100;
+    if (t < 0) t = 0; if (t > 1) t = 1;
+    const barH = t * h;
+    const [r, g, b] = dbToRgb(db);
+    ctxSpec.fillStyle = `rgb(${r},${g},${b})`;
+    ctxSpec.fillRect(i * barW, h - barH, Math.max(1, barW - 0.5), barH);
+  }
+
+  elPeak.textContent = `peak: ${Math.round(f.peakHz)} Hz / ${f.peakDb.toFixed(1)} dB`;
+}
+
+function drawGram(f) {
+  // Append one column to the offscreen canvas.
+  const col = gramCol;
+  const n = f.spec.length;
+  const img = gramCtx.createImageData(1, gramRows);
+  for (let row = 0; row < gramRows; ++row) {
+    // top row = highest frequency; flip for natural orientation
+    const i  = Math.floor((1 - row / (gramRows - 1)) * (n - 1));
+    const db = f.spec[i];
+    const [r, g, b] = dbToRgb(db);
+    const k = row * 4;
+    img.data[k]     = r;
+    img.data[k + 1] = g;
+    img.data[k + 2] = b;
+    img.data[k + 3] = 255;
+  }
+  gramCtx.putImageData(img, col, 0);
+  gramCol = (gramCol + 1) % gramWidth;
+
+  // Blit to the visible canvas, scrolling so newest column is on the right.
+  const { w, h } = resizeCanvas(cvGram);
+  ctxGram.fillStyle = '#0f141a';
+  ctxGram.fillRect(0, 0, w, h);
+  ctxGram.imageSmoothingEnabled = false;
+
+  const right = gramCol;
+  // Right segment (old data, drawn on the left of the visible window)
+  ctxGram.drawImage(gramCanvas,
+    right, 0, gramWidth - right, gramRows,
+    0, 0, ((gramWidth - right) / gramWidth) * w, h);
+  // Left segment (newer data, drawn on the right)
+  ctxGram.drawImage(gramCanvas,
+    0, 0, right, gramRows,
+    ((gramWidth - right) / gramWidth) * w, 0, (right / gramWidth) * w, h);
+}
+
+// ----- Main loop -------------------------------------------------------------
+function tick() {
+  if (lastFrame) {
+    drawWave(lastFrame);
+    drawSpec(lastFrame);
+    drawGram(lastFrame);
+    elSr.textContent  = lastFrame.sr;
+    elFft.textContent = (lastFrame.spec.length * 2) + ' bins';
+  }
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    const fps = (frameCount * 1000) / (now - lastFpsTime);
+    elFps.textContent = fps.toFixed(0);
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+  requestAnimationFrame(tick);
+}
+
+connect();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

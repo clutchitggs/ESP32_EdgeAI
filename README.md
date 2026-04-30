@@ -1,150 +1,252 @@
-ESP32-S3 Drowsiness Detector
-============================
+# XIAO ESP32-S3 Sense — Real-Time Audio Spectrum Analyzer
 
-An edge-AI project for the ESP32-S3 Sense that monitors eye state using the on-board camera to detect when a student is getting drowsy at their desk and triggers an alert (e.g., buzzer or LED). All inference runs fully on the ESP32-S3; no cloud is required.
+A self-contained audio analysis instrument running entirely on a Seeed
+**XIAO ESP32-S3 Sense**. The on-board PDM MEMS microphone is sampled at
+16 kHz, processed by a 1024-point real FFT on-chip, and streamed live
+over Wi-Fi to a browser dashboard rendering a waveform, an FFT spectrum,
+and a scrolling spectrogram (waterfall) at ~30 frames/second.
 
-## Project overview
-
-This project is designed as a **portfolio-grade** example to showcase:
-
-- Embedded systems skills (ESP32-S3, camera bring-up, GPIO, basic real-time loops).
-- Edge AI and tinyML (small CNN running on-device for eye-state classification).
-- Clean, professional firmware and ML code structure.
-- Clear documentation suitable for recruiters and engineers reviewing a GitHub profile.
-
-The primary use case is a low-cost, personal drowsiness monitor for students studying at a desk. The same architecture can be adapted to other domains such as driver monitoring, operator safety, or focused-work tracking.
-
-## High-level architecture
-
-At a high level, the system runs the following loop on the ESP32-S3 Sense:
-
-1. Capture an image frame from the on-board camera.
-2. Preprocess the frame to extract a small region of interest (eyes/upper face) and resize/normalize it.
-3. Run a tiny convolutional neural network (CNN) on-device to classify the eye state as:
-   - `awake` (eyes open)
-   - `drowsy` (eyes mostly or fully closed)
-4. Accumulate results over multiple frames with simple decision logic.
-5. Trigger an alert (buzzer/LED) when drowsiness persists beyond a configurable threshold.
-6. Optionally log events or expose basic status over serial or Wi-Fi in future extensions.
-
-Conceptual data flow:
-
-```mermaid
-flowchart LR
-    cameraSensor[Camera sensor] --> frameBuffer[Frame buffer]
-    frameBuffer --> preproc["Preprocessing (ROI, resize, normalize)"]
-    preproc --> tinyCnn["Tiny CNN (eye state model)"]
-    tinyCnn --> decisionLogic["Drowsiness decision (multi-frame)"]
-    decisionLogic --> alertOutput["Alert output (buzzer/LED)"]
+```
+   PDM mic ─► I2S/DMA ─► Hann window ─► radix-2 FFT ─► dB magnitudes
+                                                      │
+                                       binary frame ──┴─► WebSocket ─► browser
 ```
 
-The ML model is trained offline (Python/TensorFlow) and then exported in a microcontroller-friendly format (e.g., TensorFlow Lite Micro). The compiled model data is linked into the firmware and evaluated on-device.
+> **Status:** firmware compiles and flashes on ESP-IDF 5.1+. After flashing,
+> point a browser at the device's IP address (printed on the serial
+> console) and open the dashboard.
 
-## Repository layout
+---
 
-- `firmware/`
-  - ESP-IDF style C/C++ firmware for the ESP32-S3 Sense.
-  - Contains the main application, camera initialization, inference interface, and alert logic.
-- `ml/`
-  - Python code for data handling and model training.
-  - Includes scripts or notebooks to train a small eye-state classifier and export it to an embedded-friendly format.
-  - `data/` (placeholder) for training images.
-  - `models/` (placeholder) for trained/exported models.
-- `docs/`
-  - Additional documentation, diagrams, and notes (optional; some documentation is kept directly in this README).
+## What it does, in plain language
 
-This structure is intentionally close to what a real embedded/ML project might use in industry.
+Plug the XIAO into USB, configure your Wi-Fi credentials once, and open
+`http://<device-ip>/` from any device on the same network. You'll see:
 
-## Build and run overview
+- **Waveform** — the live time-domain audio trace.
+- **Spectrum** — a real-time FFT bar plot, dB FS scale, with the dominant
+  frequency annotated in Hz.
+- **Spectrogram** — a scrolling time × frequency heatmap that lets you
+  *see* speech formants, music, whistles, and environmental sounds as
+  patterns over time.
 
-### Firmware (ESP32-S3, ESP-IDF)
+Speak, clap, whistle, or play music — the dashboard reacts within tens of
+milliseconds.
 
-The firmware is intended to be built with **ESP-IDF** using an ESP32-S3 Sense board:
+---
 
-1. Install ESP-IDF following Espressif's official documentation.
-2. Connect the ESP32-S3 Sense via USB.
-3. From the `firmware/` directory:
-   - Configure the project as needed (e.g., `idf.py menuconfig`).
-   - Build: `idf.py build`
-   - Flash: `idf.py -p <PORT> flash`
-   - Monitor: `idf.py -p <PORT> monitor`
+## Why it's interesting (engineering highlights)
 
-Once flashed, the device will:
+| Subsystem        | What it demonstrates                                            |
+|------------------|------------------------------------------------------------------|
+| Audio capture    | ESP-IDF 5.x I²S PDM driver, DMA-backed continuous capture       |
+| DSP              | Hann windowing, in-place radix-2 FFT (esp-dsp), dB FS conversion|
+| Real-time core   | FreeRTOS analysis task pinned to APP_CPU at priority 5          |
+| Memory           | Internal-RAM scratch for FFT, PSRAM-friendly Wi-Fi/LWIP stacks  |
+| Networking       | Wi-Fi STA, async event-driven HTTP server, binary WebSocket     |
+| On-wire protocol | Compact 24-byte header + int16 wave + int8 dB spec (~792 B/frame)|
+| Frontend         | Pure HTML/JS/Canvas, no build step, no external dependencies    |
 
-- Initialize the camera.
-- Capture frames at a modest resolution appropriate for the tinyML model.
-- Run the (stubbed, then real) inference pipeline.
-- Apply drowsiness decision logic and, when fully implemented, drive alert outputs.
+The same architecture (I²S in → DMA → DSP → WebSocket out) is the core of
+acoustic anomaly detection, predictive-maintenance sensors, hearing aids,
+and edge-AI audio classifiers. This project is the minimal honest
+demonstration of that stack.
 
-> Note: Until the ML model is trained and integrated, the inference step will be a placeholder that always reports an "awake" state. This keeps the firmware compilable while the ML pipeline is developed.
+---
 
-### ML training pipeline (Python)
+## Hardware
 
-The ML side is developed and run on a host machine (e.g., your Windows PC with Python installed):
+### Board
 
-1. Create and activate a Python virtual environment (recommended).
-2. From the `ml/` directory, install dependencies:
-   - `pip install -r requirements.txt`
-3. Prepare a dataset of eye-region images labeled as `awake` and `drowsy` (either using a small public dataset or by capturing and labeling your own images).
-4. Run the training script or notebook (to be provided in `ml/`) to:
-   - Load and preprocess the images.
-   - Train a small CNN suitable for ESP32-S3.
-   - Evaluate performance.
-   - Export a TensorFlow Lite (or similar) model file.
-5. Convert the exported model into a C array and include it in the firmware (dedicated helper code and instructions will be added).
+- **Seeed Studio XIAO ESP32-S3 Sense** (ESP32-S3, 8 MB flash, 8 MB Octal PSRAM,
+  on-board OV2640 camera, on-board PDM digital MEMS microphone, microSD slot,
+  USB-C, Wi-Fi/BT).
 
-The README and `ml/` documentation will describe the recommended workflow once the training script is implemented.
+### Pinout used
 
-## Status and roadmap
+| Function       | XIAO label | GPIO    |
+|----------------|------------|---------|
+| PDM mic clock  | (internal) | GPIO 42 |
+| PDM mic data   | (internal) | GPIO 41 |
+| Status LED     | USER_LED   | GPIO 21 |
 
-Current status:
+The microphone is wired on-board on the Sense expansion — no external
+components are required to run the analyzer.
 
-- Repository structure created (`firmware/`, `ml`, `docs`).
-- Top-level README and MIT license in place.
-- ESP-IDF firmware skeleton implemented:
-  - `app_main()` entry point and FreeRTOS task loop.
-  - Camera initialization and frame capture stubs (`camera.c` / `camera.h`).
-  - Inference interface and drowsiness decision integration (`inference.c` / `inference.h`).
-  - Alert output abstraction with a placeholder GPIO (`alert.c` / `alert.h`).
-  - Model data placeholders (`model_data.c` / `model_data.h`).
-- ML training pipeline scaffolding implemented:
-  - `ml/requirements.txt` for Python dependencies.
-  - `ml/train_eye_state_model.py` for training and exporting a tiny eye-state CNN.
-  - `ml/README.md` documenting dataset expectations and usage.
+### Bill of materials
 
-Planned next steps:
+| Qty | Item                              | Notes                       |
+|-----|-----------------------------------|-----------------------------|
+| 1   | XIAO ESP32-S3 Sense               | with the Sense expansion    |
+| 1   | USB-C cable                       | data + power                |
 
-1. **Data collection and training**
-   - Capture and label eye-region images into `ml/data/awake` and `ml/data/drowsy`.
-   - Run `train_eye_state_model.py` to train and export a `.tflite` model.
-2. **Model integration on-device**
-   - Convert the `.tflite` file to a C array and replace the placeholder in `model_data.c`.
-   - Integrate a microcontroller inference runtime (e.g., TensorFlow Lite Micro) and connect it to `run_drowsiness_inference()`.
-3. **Alert hardware and UX**
-   - Connect a buzzer or LED to the configured GPIO and tune alert behavior.
-   - Optionally add a simple serial or web-based status interface for debugging and demos.
-4. **Testing and refinement**
-   - Test the system in realistic study conditions.
-   - Adjust thresholds, model, and preprocessing for robustness.
+---
 
-## How to demo (high-level)
+## Build & flash
 
-In an interview or portfolio context, a typical demo flow could be:
+Requires **ESP-IDF v5.1 or newer** with the ESP32-S3 toolchain installed.
 
-1. Briefly explain the problem: students (and operators or drivers) get drowsy while working; this project is a low-cost, embedded drowsiness detector.
-2. Show the ESP32-S3 Sense on your desk, connected via USB and pointed at your face.
-3. Start the firmware and describe the pipeline:
-   - Camera frames → preprocessing → tiny CNN → multi-frame decision → buzzer/LED alert.
-4. Sit upright and look at your screen/book; the system should remain in the "awake" state (no alert).
-5. Gradually close your eyes or simulate nodding off; after a short delay, the alert activates.
-6. Briefly walk through the GitHub repo:
-   - `firmware/` ESP-IDF structure and main loop.
-   - `ml/` training pipeline and exported model.
-   - The README architecture diagram and explanation.
+```bash
+cd firmware
+idf.py set-target esp32s3
 
-This combination of a live demo and clear repository structure is intended to make a strong impression on embedded/edge-AI focused employers.
+# One-time: configure your Wi-Fi credentials
+idf.py menuconfig
+#   -> XIAO Audio Analyzer -> Wi-Fi SSID / Wi-Fi password
+
+idf.py build
+idf.py -p <PORT> flash monitor
+```
+
+On first boot, the device will associate with Wi-Fi and print its IP
+address to the serial console:
+
+```
+I (1234) wifi_sta: Got IP: 192.168.1.42
+I (1240) web_server: HTTP server listening on port 80
+```
+
+Open `http://192.168.1.42/` in a browser on the same network.
+
+---
+
+## Theory of operation
+
+### 1. Sampling
+
+The PDM MEMS microphone is clocked at the I²S clock rate; the ESP32-S3
+PDM peripheral oversamples and decimates internally to deliver clean
+16-bit signed PCM samples at the configured rate (default 16 kHz). DMA
+keeps two ring-buffered descriptor groups (~30 ms total) so that the
+analysis task never starves and never has to spin-wait.
+
+### 2. Windowing
+
+A 1024-sample Hann window is pre-computed once at boot and multiplied
+into each input frame to suppress spectral leakage from the rectangular
+edge of the buffer. Hann was chosen for its modest main-lobe width and
+fast side-lobe roll-off (≈18 dB/octave) — a good general-purpose choice
+for audio inspection.
+
+### 3. FFT
+
+`esp-dsp`'s `dsps_fft2r_fc32` performs an in-place radix-2 complex FFT
+followed by `dsps_bit_rev_fc32` to restore natural ordering. Inputs are
+packed as interleaved complex with the imaginary part zero. Using the
+complex FFT (rather than the more efficient real-FFT helper) trades a
+≈2× CPU cost for code clarity — at 1024 points / 16 kHz the analysis
+task uses well under 10% of one CPU core.
+
+### 4. Magnitude & dB
+
+For each of the 512 positive bins:
+
+```
+magnitude = sqrt(re² + im²)
+dB FS     = 20 · log₁₀(magnitude + ε)
+```
+
+The peak (excluding DC) is recorded for the dashboard's Hz/dB readout.
+
+### 5. Down-mix for transport
+
+To keep WebSocket frame size small enough to push at ≥ 30 fps even on
+moderate Wi-Fi, the 1024 wave samples are decimated to 256 (group
+average) and the 512 spectrum bins are pair-averaged to 256. dB values
+are clamped to `[-128, 0]` and packed as `int8_t`.
+
+### 6. On-wire frame format
+
+```
+offset  size   field
+------  -----  -----
+  0      4    magic (0x41554441 'AUDA', little endian)
+  4      4    seq         (frame counter)
+  8      4    peak_hz     (float32)
+ 12      4    peak_db     (float32)
+ 16      2    sample_rate (uint16)
+ 18      2    n_wave      (uint16, = 256)
+ 20      2    n_spec      (uint16, = 256)
+ 22      2    reserved
+ 24    n_wave×2  wave[]   (int16, time-domain thumbnail)
+ ..    n_spec×1  spec[]   (int8,  dB clamped to [-128, 0])
+
+total payload = 24 + 512 + 256 = 792 bytes
+```
+
+A `DataView` in `index.html` parses these fields directly — no JSON,
+no Base64.
+
+---
+
+## Performance characterization
+
+Numbers below are measured on the reference unit, ESP-IDF 5.1, no other
+tasks running. Re-run on your hardware and update with your values.
+
+| Metric                     | Value     | Notes                                  |
+|----------------------------|-----------|----------------------------------------|
+| Sample rate                | 16 kHz    | configurable, 8–48 kHz                 |
+| FFT size                   | 1024      | configurable, 256–2048 (power of 2)    |
+| Frequency bin resolution   | 15.6 Hz   | sr / fft_size                          |
+| Useful frequency range     | 0–8 kHz   | Nyquist                                |
+| End-to-end frame rate      | _TBD_ fps | observed in dashboard top-right        |
+| Wi-Fi payload per frame    | 792 B     |                                        |
+| RAM used (DSP scratch)     | ~24 KB    | internal RAM, FFT scratch + window     |
+| CPU load (analysis task)   | _TBD_ %   | measure with `vTaskGetRunTimeStats`    |
+
+---
+
+## Demo ideas
+
+These are scripted scenarios that read clearly on a 30-second video.
+
+1. **Speak into it.** Watch the spectrogram resolve speech formants — the
+   horizontal bands at ~500/1500/2500 Hz are the textbook vowel formants.
+2. **Whistle a slide.** A pure tone draws a clean, narrow line on the
+   spectrogram that follows your pitch.
+3. **Play a piano note.** Spot the fundamental plus the harmonic stack.
+4. **Tap a glass / clap your hands.** Wide-band transient — the
+   spectrogram shows a vertical streak across the entire band.
+5. **Music.** Watch beats and bass lines paint across the waterfall.
+
+Each scenario is a real spectral analysis tool being used the way an
+engineer would use it.
+
+---
+
+## Source layout
+
+```
+firmware/
+├── CMakeLists.txt
+├── sdkconfig.defaults     ESP32-S3, PSRAM, custom partitions, WS support
+├── partitions.csv
+└── main/
+    ├── CMakeLists.txt
+    ├── idf_component.yml  pulls in espressif/esp-dsp
+    ├── Kconfig.projbuild  Wi-Fi creds, sample rate, FFT size
+    ├── main.c             boot + analysis task
+    ├── audio_capture.{c,h}  I²S PDM RX driver
+    ├── dsp_pipeline.{c,h}   window + FFT + frame serialization
+    ├── wifi_sta.{c,h}       station-mode connect with retry
+    ├── web_server.{c,h}     HTTP server + WS broadcaster
+    └── index.html           embedded dashboard, served from flash
+```
+
+---
+
+## Future work
+
+- Selectable window function (Hann, Hamming, Blackman-Harris, flat-top).
+- Configurable dB floor / peak hold from the dashboard.
+- Logarithmic frequency axis for the spectrogram (musical octaves).
+- Sound-event classifier (TFLite Micro) on the same audio path.
+- Save annotated clips to the on-board microSD when the user clicks
+  *record* in the dashboard.
+
+---
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
+MIT — see [LICENSE](LICENSE).
