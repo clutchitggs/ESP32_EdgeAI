@@ -1,12 +1,17 @@
 # XIAO ESP32-S3 Sense — Real-Time Audio Spectrum Analyzer
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.1%2B-E7352C?logo=espressif&logoColor=white)](#build--flash)
+[![Target](https://img.shields.io/badge/target-ESP32--S3-000000?logo=espressif&logoColor=white)](#hardware)
+[![Language](https://img.shields.io/badge/language-C-blue?logo=c)](#)
+
 ![dashboard](docs/screenshots/speech.png)
 
 A self-contained audio analysis instrument running entirely on a Seeed
 **XIAO ESP32-S3 Sense**. The on-board PDM MEMS microphone is sampled at
 16 kHz, processed by a 1024-point real FFT on-chip, and streamed live
 over Wi-Fi to a browser dashboard rendering a waveform, an FFT spectrum,
-and a scrolling spectrogram (waterfall) at ~30 frames/second.
+and a scrolling spectrogram (waterfall) at ~20 frames/second.
 
 ```
    PDM mic ─► I2S/DMA ─► Hann window ─► radix-2 FFT ─► dB magnitudes
@@ -188,8 +193,8 @@ no Base64.
 
 ## Performance characterization
 
-Numbers below are measured on the reference unit, ESP-IDF 5.1, no other
-tasks running. Re-run on your hardware and update with your values.
+Numbers below are measured on the reference unit running ESP-IDF 5.1
+with no other tasks active.
 
 | Metric                     | Value     | Notes                                  |
 |----------------------------|-----------|----------------------------------------|
