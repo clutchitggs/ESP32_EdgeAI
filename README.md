@@ -49,15 +49,17 @@ milliseconds.
 | On-wire protocol | Compact 24-byte header + int16 wave + int8 dB spec (~792 B/frame)|
 | Frontend         | Pure HTML/JS/Canvas, no build step, no external dependencies    |
 
-The same architecture (I²S in → DMA → DSP → WebSocket out) is the core of
-acoustic anomaly detection, predictive-maintenance sensors, hearing aids,
-and edge-AI audio classifiers. This project is the minimal honest
-demonstration of that stack.
+This is the on-device DSP foundation — capture, window, FFT, transport.
+Putting an ML model on top (a sound-event classifier, an anomaly
+detector) is the obvious Edge-AI extension; it's listed under
+[Future work](#future-work) but not implemented in this build.
 
 ---
 
 ## Hardware
-![dashboard](docs/hardware.jpg)
+
+![hardware photo](docs/hardware.jpg)
+
 ### Board
 
 - **Seeed Studio XIAO ESP32-S3 Sense** (ESP32-S3, 8 MB flash, 8 MB Octal PSRAM,
@@ -70,7 +72,6 @@ demonstration of that stack.
 |----------------|------------|---------|
 | PDM mic clock  | (internal) | GPIO 42 |
 | PDM mic data   | (internal) | GPIO 41 |
-| Status LED     | USER_LED   | GPIO 21 |
 
 The microphone is wired on-board on the Sense expansion — no external
 components are required to run the analyzer.
@@ -240,12 +241,16 @@ firmware/
 
 ## Future work
 
+- **Edge-AI sound-event classifier (TFLite Micro)** — the natural next
+  step on top of the existing FFT pipeline. Train a small CNN on
+  log-mel features (claps, glass-break, spoken keywords, motor-fault
+  signatures) and run inference on each frame on-device. The XIAO
+  ESP32-S3 Sense was selected with this extension in mind.
+- Save annotated clips to the on-board microSD when the user clicks
+  *record* in the dashboard.
 - Selectable window function (Hann, Hamming, Blackman-Harris, flat-top).
 - Configurable dB floor / peak hold from the dashboard.
 - Logarithmic frequency axis for the spectrogram (musical octaves).
-- Sound-event classifier (TFLite Micro) on the same audio path.
-- Save annotated clips to the on-board microSD when the user clicks
-  *record* in the dashboard.
 
 ---
 
