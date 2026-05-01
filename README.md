@@ -1,5 +1,7 @@
 # XIAO ESP32-S3 Sense — Real-Time Audio Spectrum Analyzer
 
+![dashboard](docs/screenshots/speech.png)
+
 A self-contained audio analysis instrument running entirely on a Seeed
 **XIAO ESP32-S3 Sense**. The on-board PDM MEMS microphone is sampled at
 16 kHz, processed by a 1024-point real FFT on-chip, and streamed live
@@ -55,7 +57,7 @@ demonstration of that stack.
 ---
 
 ## Hardware
-
+![dashboard](docs/hardware.jpg)
 ### Board
 
 - **Seeed Studio XIAO ESP32-S3 Sense** (ESP32-S3, 8 MB flash, 8 MB Octal PSRAM,
@@ -190,7 +192,7 @@ tasks running. Re-run on your hardware and update with your values.
 | FFT size                   | 1024      | configurable, 256–2048 (power of 2)    |
 | Frequency bin resolution   | 15.6 Hz   | sr / fft_size                          |
 | Useful frequency range     | 0–8 kHz   | Nyquist                                |
-| End-to-end frame rate      | _TBD_ fps | observed in dashboard top-right        |
+| End-to-end frame rate      | 20 fps | observed in dashboard top-right        |
 | Wi-Fi payload per frame    | 792 B     |                                        |
 | RAM used (DSP scratch)     | ~24 KB    | internal RAM, FFT scratch + window     |
 | CPU load (analysis task)   | _TBD_ %   | measure with `vTaskGetRunTimeStats`    |

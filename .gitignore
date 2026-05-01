@@ -10,3 +10,16 @@ dependencies.lock
 *~
 .DS_Store
 Thumbs.db
+
+# Personal notes — not for the public repo
+docs/POLISH_CHECKLIST.md
+docs/WALKTHROUGH.md
+
+# Raw recordings and oversized media — kept local only
+docs/vids/
+docs/demo.gif/
+
+# Screenshots not used in README — kept local only
+docs/screenshots/whistle.png
+docs/screenshots/music.png
+docs/screenshots/silence.png
