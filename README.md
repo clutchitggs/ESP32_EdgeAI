@@ -64,7 +64,11 @@ detector) is the obvious Edge-AI extension; it's listed under
 
 - **Seeed Studio XIAO ESP32-S3 Sense** (ESP32-S3, 8 MB flash, 8 MB Octal PSRAM,
   on-board OV2640 camera, on-board PDM digital MEMS microphone, microSD slot,
-  USB-C, Wi-Fi/BT).
+  USB-C, Wi-Fi/BT). Marketed as an Edge-AI development board.
+
+This build uses only the microphone, Wi-Fi and PSRAM. The camera and
+microSD are present on the board but unused — they're available for the
+Edge-AI extensions sketched in [Future work](#future-work).
 
 ### Pinout used
 
